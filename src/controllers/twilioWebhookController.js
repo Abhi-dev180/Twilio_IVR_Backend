@@ -86,7 +86,7 @@ export const handleTryCode = async (req, res) => {
 
   const twiml = new twilio.twiml.VoiceResponse();
 
-  const BATCH_SIZE = 15;
+  const BATCH_SIZE = 50;
   const endCodeNum = Math.min(currentCodeNum + BATCH_SIZE, 1000);
 
   let lastCodeInBatch = '';
@@ -105,9 +105,8 @@ export const handleTryCode = async (req, res) => {
     } else {
       batchLogs.push(`IVR says "Incorrect Test Code" for ${codeStr}. Trying next...`);
       batchLogs.push(`DTMF Sent: ${baseCard}:${codeStr}`);
-      // Add a 4 second pause to let the slow ngrok free-tier process the target IVR's webhook. 
-      // If we play digits while ngrok is still loading the next <Gather>, the digits are lost and the IVR times out!
-      twiml.pause({ length: 4 });
+      // Pause briefly to let the test-IVR's Gather process the previous digit and set up the next one
+      twiml.pause({ length: 2 });
       twiml.play({ digits: codeStr });
     }
 
