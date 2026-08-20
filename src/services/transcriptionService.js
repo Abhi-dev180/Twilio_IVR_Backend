@@ -50,23 +50,22 @@ if (!fs.existsSync(AUDIO_DIR)) {
         const targetTestCode = attempt && attempt.target_test_code ? attempt.target_test_code : '003';
         const currentTestCode = attempt && attempt.test_value && attempt.test_value.includes(':') ? attempt.test_value.split(':')[1] : '001';
         
-        // Fetch the attempt logs to see exactly which codes were attempted in THIS call
-        const { data: logsData } = await supabase.from('attempt_logs').select('log').eq('attempt_id', attemptId).order('created_at', { ascending: true });
+        // Fetch the attempt logs (stored as a JSON array in attempts.logs column)
+        const { data: attemptData } = await supabase.from('attempts').select('logs').eq('id', attemptId).single();
+        const logsArr = (attemptData && attemptData.logs) ? attemptData.logs : [];
         
         let attemptedCodes = [];
-        if (logsData) {
-            logsData.forEach(l => {
-                const match = l.log.match(/DTMF Sent: \d{16}:(\d{3})/);
-                if (match) attemptedCodes.push(match[1]);
-            });
-        }
+        logsArr.forEach(l => {
+            const match = l.match(/DTMF Sent: \d{16}:(\d{3})/);
+            if (match) attemptedCodes.push(match[1]);
+        });
         
         // Generate a full-fledged mock transcript reflecting the actual interaction
         let mockTranscript = `IVR: Welcome to the test bank. Please enter your 16 digit card number.\nUser: ${baseCard}\nIVR: Card accepted. Please enter your 3 digit Test code.\n`;
         
         for (const codeStr of attemptedCodes) {
             mockTranscript += `User: ${codeStr}\n`;
-            if (codeStr === targetTestCode.padStart(3, '0')) {
+            if (codeStr === String(targetTestCode).padStart(3, '0')) {
                 mockTranscript += `IVR: Test code correct. Please enter your expiration date. Thank you, your details are verified.\n`;
             } else {
                 mockTranscript += `IVR: Incorrect. Please enter your 3 digit Test code.\n`;
