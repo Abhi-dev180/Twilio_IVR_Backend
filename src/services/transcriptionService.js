@@ -86,24 +86,35 @@ if (!fs.existsSync(AUDIO_DIR)) {
       };
 
       // 4. Update status in Database
+      const { supabase } = await import('../config/db.js');
+      const { data: currentAttempt } = await supabase.from('attempts').select('status').eq('id', attemptId).single();
+      const isAlreadyCompleted = currentAttempt && currentAttempt.status === 'completed';
+
       if (signals.outcome === 'winner') {
-        await AttemptModel.updateAttemptStatus(attemptId, 'completed', 0, resultDetails);
-        await AttemptModel.addLog(attemptId, `🎉 Attempt SUCCESSFUL! Winner code confirmed.`);
+        if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'completed', 0, resultDetails);
+        await AttemptModel.addLog(attemptId, `🎉 Attempt SUCCESSFUL! Winner code confirmed by transcript.`);
         
         // Stop the campaign immediately because we found the Test code!
         await AttemptModel.addLog(attemptId, `Halting campaign automatically because correct Test code was found.`);
         OrchestratorService.stopCampaign();
       } else if (['lockout', 'exhausted_reject', 'invalid', 'voicemail'].includes(signals.outcome)) {
-        await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Outcome: ${signals.outcome}` });
+        if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Outcome: ${signals.outcome}` });
       } else {
         // Stuck or unknown outcome
-        await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Call got stuck or unknown state reached` });
+        if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Call got stuck or unknown state reached` });
       }
 
     } catch (error) {
       console.error(`[TranscriptionService] Error processing attempt #${attemptId}:`, error);
       await AttemptModel.addLog(attemptId, `Transcription/Analysis error: ${error.message}`);
-      await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { error: error.message });
+      
+      const { supabase } = await import('../config/db.js');
+      const { data: currentAttempt } = await supabase.from('attempts').select('status').eq('id', attemptId).single();
+      if (!currentAttempt || currentAttempt.status !== 'completed') {
+        await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { error: error.message });
+      } else {
+        await AttemptModel.addLog(attemptId, `Ignoring transcription error because attempt is already marked completed.`);
+      }
     }
   };
 

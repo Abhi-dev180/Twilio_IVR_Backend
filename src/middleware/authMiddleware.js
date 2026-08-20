@@ -7,12 +7,14 @@ export default (req, res, next) => {
   const authHeader = req.headers['authorization'];
   
   if (!authHeader) {
+    console.error('[AuthMiddleware] 401 Unauthorized: No authorization header provided for URL:', req.originalUrl);
     return res.status(401).json({ error: 'Access denied. No authorization header provided.' });
   }
 
   // Expecting format: Bearer <token>
   const parts = authHeader.split(' ');
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    console.error('[AuthMiddleware] 401 Unauthorized: Invalid token format for URL:', req.originalUrl, '- Header:', authHeader);
     return res.status(401).json({ error: 'Access denied. Invalid token format.' });
   }
 

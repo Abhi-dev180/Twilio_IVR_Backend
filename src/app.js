@@ -23,6 +23,11 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Twilio IVR Platform Backend is running.' });
 });
 
+// Root fallback
+app.get('/', (req, res) => {
+  res.status(200).send('Twilio IVR Platform Backend is running. Visit /health for status.');
+});
+
 // Run Server & Db Sync
 const startServer = async () => {
   await initializeDatabase();

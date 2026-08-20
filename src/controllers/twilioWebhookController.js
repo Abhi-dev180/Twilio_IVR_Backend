@@ -86,7 +86,7 @@ export const handleTryCode = async (req, res) => {
 
   const twiml = new twilio.twiml.VoiceResponse();
 
-  const BATCH_SIZE = 10;
+  const BATCH_SIZE = 50;
   const endCodeNum = Math.min(currentCodeNum + BATCH_SIZE, 1000);
 
   let lastCodeInBatch = '';
@@ -105,8 +105,10 @@ export const handleTryCode = async (req, res) => {
     } else {
       batchLogs.push(`IVR says "Incorrect Test Code" for ${codeStr}. Trying next...`);
       batchLogs.push(`DTMF Sent: ${baseCard}:${codeStr}`);
-      // Wait 1.0 seconds (2 'w's) to let IVR process the webhook before playing next
-      twiml.play({ digits: `ww${codeStr}` });
+      // Add a 4 second pause to let the slow ngrok free-tier process the target IVR's webhook. 
+      // If we play digits while ngrok is still loading the next <Gather>, the digits are lost and the IVR times out!
+      twiml.pause({ length: 4 });
+      twiml.play({ digits: codeStr });
     }
 
     if (targetTestCode && codeStr === String(targetTestCode).padStart(3, '0')) {
@@ -128,18 +130,9 @@ export const handleTryCode = async (req, res) => {
   } else {
     const nextTestCode = endCodeNum.toString().padStart(3, '0');
 
-    // Give the IVR time to say "Incorrect" for the final guess in the batch
+    // Give the IVR time to process the final guess
+    twiml.pause({ length: 1 });
     const host = process.env.SERVER_URL || `${req.protocol}://${req.get('host')}`;
-    twiml.gather({
-      action: `${host}/api/call/try/${attemptId}?currentTestCode=${nextTestCode}&isFirst=false`,
-      method: 'POST',
-      timeout: 1,
-      input: 'dtmf',
-      numDigits: 1
-    });
-
-    // FALLBACK: If Gather times out because the IVR didn't press a button, 
-    // Twilio falls through to here. We MUST explicitly redirect!
     twiml.redirect({ method: 'POST' }, `${host}/api/call/try/${attemptId}?currentTestCode=${nextTestCode}&isFirst=false`);
   }
 
