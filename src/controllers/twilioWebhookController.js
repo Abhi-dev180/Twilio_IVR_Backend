@@ -86,7 +86,7 @@ export const handleTryCode = async (req, res) => {
 
   const twiml = new twilio.twiml.VoiceResponse();
 
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = 20;
   const endCodeNum = Math.min(currentCodeNum + BATCH_SIZE, 1000);
 
   let lastCodeInBatch = '';
