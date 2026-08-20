@@ -75,13 +75,8 @@ export const getDashboardStatus = async (req, res) => {
         target_test_code: randomTestCode
       }];
       
-      // Auto-configure the Test IVR via Supabase
-      const { supabase } = await import('../config/db.js');
-      const { error: dbErr } = await supabase
-        .from('mock_ivr_configs')
-        .upsert({ id: 1, sixteenDigit: sixteenDigit, testCode: randomTestCode }, { onConflict: 'id' });
-      if (dbErr) console.error('Failed to configure Test IVR:', dbErr);
-      
+      // Note: Test IVR configures itself locally via JSON, so we don't push config to Supabase here.
+
       // Ensure no old/stuck queued attempts from previous runs get picked up
       await OrchestratorService.cancelPendingAttempts();
 
