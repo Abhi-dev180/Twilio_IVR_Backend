@@ -21,6 +21,14 @@ if (!fs.existsSync(AUDIO_DIR)) {
    */
   export const processRecording = async (attemptId, recordingUrl) => {
     try {
+      // Early exit: if already completed, skip transcription (prevents duplicate runs from late recording callbacks)
+      const { supabase: supabaseEarly } = await import('../config/db.js');
+      const { data: earlyCheck } = await supabaseEarly.from('attempts').select('status').eq('id', attemptId).single();
+      if (earlyCheck && earlyCheck.status === 'completed') {
+        console.log(`[TranscriptionService] Attempt #${attemptId} already completed. Skipping duplicate transcription.`);
+        return;
+      }
+
       await AttemptModel.addLog(attemptId, 'Downloading recording from Twilio...');
       
       const fileExtension = '.mp3'; // Twilio records in mp3/wav
