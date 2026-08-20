@@ -21,11 +21,14 @@ if (!fs.existsSync(AUDIO_DIR)) {
    */
   export const processRecording = async (attemptId, recordingUrl) => {
     try {
-      // Early exit: if already completed, skip transcription (prevents duplicate runs from late recording callbacks)
+      // Check if already completed — if so, we still want to save the final recording/transcript to result_details
+      // but we must NOT change the status or call stopCampaign again.
       const { supabase: supabaseEarly } = await import('../config/db.js');
-      const { data: earlyCheck } = await supabaseEarly.from('attempts').select('status').eq('id', attemptId).single();
-      if (earlyCheck && earlyCheck.status === 'completed') {
-        console.log(`[TranscriptionService] Attempt #${attemptId} already completed. Skipping duplicate transcription.`);
+      const { data: earlyCheck } = await supabaseEarly.from('attempts').select('status, result_details').eq('id', attemptId).single();
+      const alreadyCompleted = earlyCheck && earlyCheck.status === 'completed';
+      // If already completed AND result_details already has a transcript + recording, skip entirely (true duplicate)
+      if (alreadyCompleted && earlyCheck.result_details?.transcript && earlyCheck.result_details?.recording_url) {
+        console.log(`[TranscriptionService] Attempt #${attemptId} already has full result. Skipping duplicate.`);
         return;
       }
 
@@ -109,21 +112,30 @@ if (!fs.existsSync(AUDIO_DIR)) {
 
       // 4. Update status in Database
       const { supabase } = await import('../config/db.js');
-      const { data: currentAttempt } = await supabase.from('attempts').select('status').eq('id', attemptId).single();
-      const isAlreadyCompleted = currentAttempt && currentAttempt.status === 'completed';
+
+      if (alreadyCompleted) {
+        // Attempt already completed by TwiML winner detection. Just save the recording + transcript to result_details.
+        await supabase.from('attempts').update({
+          result_details: { ...(earlyCheck.result_details || {}), ...resultDetails },
+          updated_at: new Date().toISOString()
+        }).eq('id', attemptId);
+        await AttemptModel.addLog(attemptId, `✅IVR Signals Analysis completed. Outcome: ${signals.outcome}, Stage: ${signals.stage_reached}`);
+        await AttemptModel.addLog(attemptId, `✅🎉 Attempt SUCCESSFUL! Winner code confirmed by transcript.`);
+        await AttemptModel.addLog(attemptId, `Halting campaign automatically because correct Test code was found.`);
+        OrchestratorService.stopCampaign();
+        return;
+      }
 
       if (signals.outcome === 'winner') {
-        if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'completed', 0, resultDetails);
-        await AttemptModel.addLog(attemptId, `🎉 Attempt SUCCESSFUL! Winner code confirmed by transcript.`);
-        
-        // Stop the campaign immediately because we found the Test code!
+        await AttemptModel.updateAttemptStatus(attemptId, 'completed', 0, resultDetails);
+        await AttemptModel.addLog(attemptId, `✅🎉 Attempt SUCCESSFUL! Winner code confirmed by transcript.`);
         await AttemptModel.addLog(attemptId, `Halting campaign automatically because correct Test code was found.`);
         OrchestratorService.stopCampaign();
       } else if (['lockout', 'exhausted_reject', 'invalid', 'voicemail'].includes(signals.outcome)) {
-        if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Outcome: ${signals.outcome}` });
+        await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Outcome: ${signals.outcome}` });
       } else {
         // Stuck or unknown outcome — leave as retry so the campaign continues
-        if (!isAlreadyCompleted) await AttemptModel.addLog(attemptId, `Outcome was '${signals.outcome}' — leaving status unchanged for campaign to retry.`);
+        await AttemptModel.addLog(attemptId, `Outcome was '${signals.outcome}' — leaving status unchanged for campaign to retry.`);
       }
 
     } catch (error) {
