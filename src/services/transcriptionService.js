@@ -72,6 +72,16 @@ if (!fs.existsSync(AUDIO_DIR)) {
             }
         }
         
+        const winnerFound = attemptedCodes.includes(String(targetTestCode).padStart(3, '0'));
+        
+        if (!winnerFound && attemptedCodes.length > 0) {
+          // Partial run - call dropped before finding target. Status is already 'retry' from the status callback.
+          // Just save the transcript for reference but do NOT fail the attempt.
+          await AttemptModel.addLog(attemptId, `Transcript: "${transcript}"`);
+          await AttemptModel.addLog(attemptId, `IVR Signals Analysis: Partial run (${attemptedCodes.length} codes tried, target not yet found). Keeping retry status.`);
+          return;
+        }
+        
         transcript = mockTranscript;
       }
 
@@ -104,8 +114,8 @@ if (!fs.existsSync(AUDIO_DIR)) {
       } else if (['lockout', 'exhausted_reject', 'invalid', 'voicemail'].includes(signals.outcome)) {
         if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Outcome: ${signals.outcome}` });
       } else {
-        // Stuck or unknown outcome
-        if (!isAlreadyCompleted) await AttemptModel.updateAttemptStatus(attemptId, 'failed', 0, { ...resultDetails, error: `Call got stuck or unknown state reached` });
+        // Stuck or unknown outcome — leave as retry so the campaign continues
+        if (!isAlreadyCompleted) await AttemptModel.addLog(attemptId, `Outcome was '${signals.outcome}' — leaving status unchanged for campaign to retry.`);
       }
 
     } catch (error) {
